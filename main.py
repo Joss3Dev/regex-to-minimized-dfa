@@ -174,7 +174,6 @@ class AFN:
         # np.set_printoptions(threshold=sys.maxsize)
         # print(np_afn)
 
-
     def cargar_estado(self, estado, transiciones, tipo=None):
         self.estados.append(estado)
         self.d_estados.append([])
@@ -316,38 +315,106 @@ class GestorEstados:
         afn_stack.append(transicion)
 
 
-class EstadoAFD:
-    def __init__(self, valor, estados):
-        self.valor = valor
-        self.estados = estados
-        self.marcado = False
+class AFD:
+    def __init__(self, alfabeto):
+        self.d_trans = []
+        self.estados = []
+        self.estado_ini = []
+        self.estados_fin = []
+        self.alfabeto = alfabeto
+
+    def __str__(self):
+        return 'AFD: ' + self.alfabeto
+
+    def __repr__(self):
+        return str(self)
+
+    def cargar_estado(self, estado, tipo=None):
+        self.estados.append(estado)
+        self.d_trans.append([])
+        pos = self.pos_estado(estado)
+        transiciones = [[] for c in self.alfabeto]
+        self.d_trans[pos] = transiciones
+        if tipo == 'INI':
+            self.estado_ini.append(estado)
+        elif tipo == 'FIN':
+            self.estados_fin.append(estado)
+
+    def agregar_transicion(self, estado_orig, caracter, estado_dest):
+        caracter = self.pos_car(caracter)
+        if caracter != -1:
+            self.d_trans[self.pos_estado(estado_orig)][caracter].append(estado_dest)
+        else:
+            raise UserWarning('No existe caracter en alfabeto')
+
+    def imprimir_tabla_transiciones(self):
+        print(end='\t')
+        for caracter in self.alfabeto:
+            print(caracter, end='\t\t')
+        print()
+        for estado in self.estados:
+            print(str(estado.valor) + ':', end='\t')
+            cant_alfab = len(self.alfabeto)
+            for caracter in range(cant_alfab):
+                if caracter != cant_alfab:
+                    print(self.d_trans[self.pos_estado(estado)][caracter], end='\t\t')
+                else:
+                    print(self.d_trans[self.pos_estado(estado)][caracter], end='\t\t')
+            print()
+
+    def pos_car(self, caracter):
+        if self.alfabeto.count(caracter) > 0:
+            return self.alfabeto.index(caracter)
+        else:
+            return -1
+
+    def pos_estado(self, estado):
+        return self.estados.index(estado)
 
 
 # Hacer uno aparte para el AFD, este solo genera la conversion pero no tiene su ini, fin ni trancisiones
-# lo mismo con el estado, mejor hacerle un diccionario
-class AFD:
+# lo mismo con el estado
+class AFNaAFD:
 
     def __init__(self, afn):
         self.afn = afn
+        self.afd = AFD(afn.alfabeto)
         self.nro = 0
         self.d_estados = []
-        self.estado_ini = []
-        self.estados_fin = []
 
-    def crear_estado(self, estados):
-        estado_nuevo = EstadoAFD(self.nro, estados)
+    def crear_estado(self, estados_afn):
+        estado_nuevo_afd = Estado(self.nro)
+        # Siempre deberia ser solo uno el que tiene el estado inicial
+        es_ini = True and True in [True and e in self.afn.estado_ini or False for e in estados_afn] or False
+        # Varios pueden tener un estado final
+        es_fin = True and True in [True and e in self.afn.estados_fin or False for e in estados_afn] or False
+        estado_nuevo = {
+            'valor': self.nro,
+            'estado_afd': estado_nuevo_afd,
+            'estados_afn': estados_afn,
+            'marcado': False
+        }
+        tipo = None
+        if es_ini:
+            tipo = 'INI'
+        elif es_fin:
+            tipo = 'FIN'
+        self.afd.cargar_estado(estado_nuevo_afd, tipo)
         self.nro += 1
         self.d_estados.append(estado_nuevo)
         return estado_nuevo
 
+    def crear_transicion_afd(self, estado_orig, caracter, estado_dest):
+        self.afd.agregar_transicion(estado_orig, caracter, estado_dest)
+
     def buscar_estado_en_afd(self, estados_en_afn):
-        existe = False
+        existe = None
         cant_estados_afd = len(self.d_estados)
         i = 0
         e = set(estados_en_afn)
         while not existe and i < cant_estados_afd:
             estado = self.d_estados[i]
-            estados_en_afd = set(estado.estados)
+            estados_en_afd = set(estado['estados_afn'])
             if estados_en_afd == e:
                 existe = estado
             i += 1
@@ -375,16 +442,16 @@ class AFD:
         cola = [self.crear_estado(self.cerradura_eps(self.afn.estado_ini))]
         while len(cola) > 0:
             estado_afd = cola.pop(0)
-            if not estado_afd.marcado:
-                estado_afd.marcado = True
+            if not estado_afd['marcado']:
+                estado_afd['marcado'] = True
                 for c in self.afn.alfabeto:
-                    mover = self.mover(estado_afd.estados, c)
+                    mover = self.mover(estado_afd['estados_afn'], c)
                     c_eps = self.cerradura_eps(mover)
-                    existe = self.buscar_estado_en_afd(c_eps) # busca si es que no existe en d_estados otro estado con esos estados
+                    existe = self.buscar_estado_en_afd(c_eps)  # busca si es que no existe en d_estados otro estado con esos estados
                     if not existe:
-                        u = self.crear_estado(c_eps) # si no existe asigna a "u" esos estados y lo agrega a la cola y a d_estados
-                        # crear el vinculo desde estado_afd hacia u con el caracter c
+                        u = self.crear_estado(c_eps)  # si no existe asigna a "u" esos estados y lo agrega a la cola y a d_estados
+                        self.crear_transicion_afd(estado_afd['estado_afd'], c, u['estado_afd'])  # crear el vinculo desde estado_afd hacia u con el caracter c
                         cola.append(u)
-                    else:
-                        # crear el vinculo desde estado_afd hacia existe con el caracter c
-        return self.d_estados
+                    elif existe:
+                        self.crear_transicion_afd(estado_afd['estado_afd'], c, existe['estado_afd'])  # crear el vinculo desde estado_afd hacia existe con el caracter c
+        return self.afd
