@@ -347,6 +347,52 @@ class AFD:
         else:
             raise UserWarning('No existe caracter en alfabeto')
 
+    def minimizar(self):
+        f = set(self.estados_fin)
+        s_f = set(self.estados).difference(f)
+        pi = set(f)
+        pi.add(s_f)
+        pi_new = pi.copy()
+
+        while pi != pi_new:
+            pi = pi_new.copy()
+            tabla_destino = [[[]] * len(self.estados)] * len(self.alfabeto)
+            for grupo in pi_new:
+                if len(grupo) > 1:
+                    for caracter in self.alfabeto:
+                        tabla_destino.append([])
+                        for estado in grupo:
+                            pos_estado = self.pos_estado(estado)
+                            pos_car = self.pos_car(caracter)
+                            estado_destino = self.d_trans[pos_estado][pos_car]
+                            grupo_destino = [grupo for grupo in pi if estado_destino in grupo][0]
+                            tabla_destino[self.pos_car(caracter)][self.pos_estado(estado)] = grupo_destino
+            nuevos_grupos = set()
+            for grupo in pi_new:
+                for caracter in self.alfabeto:
+                    destinos = []
+                    for estado in grupo:
+                        pos_car = self.pos_car(caracter)
+                        pos_estado = self.pos_estado(estado)
+                        grupo_destino = tabla_destino[pos_car][pos_estado]
+                        if grupo_destino not in destinos:
+                            destinos.append(grupo_destino)
+                            if len(destinos) > 1:
+                                nuevos_grupos.add(set(estado))
+                                grupo_destino.remove(estado)
+            pi_new = pi_new.union(nuevos_grupos)
+
+        # Por cada grupo en pi_new hay que crear un estado para el DFA Minimizado y usar uno de los estados del
+        # grupo para identificar a que grupo va con cada caracter
+
+
+
+
+
+
+
+
+
     def imprimir_tabla_transiciones(self):
         print(end='\t')
         for caracter in self.alfabeto:
@@ -372,8 +418,6 @@ class AFD:
         return self.estados.index(estado)
 
 
-# Hacer uno aparte para el AFD, este solo genera la conversion pero no tiene su ini, fin ni trancisiones
-# lo mismo con el estado
 class AFNaAFD:
 
     def __init__(self, afn):
@@ -455,3 +499,5 @@ class AFNaAFD:
                     elif existe:
                         self.crear_transicion_afd(estado_afd['estado_afd'], c, existe['estado_afd'])  # crear el vinculo desde estado_afd hacia existe con el caracter c
         return self.afd
+
+
