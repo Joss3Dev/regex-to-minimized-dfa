@@ -1,5 +1,5 @@
-import numpy as np
 import sys
+import re
 
 
 class TablaSimbolos:
@@ -89,6 +89,8 @@ class LectorExpresionRegular:
     def parsear(self):
         for exp in self.expresiones:
             self.exp()
+        # En vez de esto hay que unir solo el inicio, ya que esto hace que sean varios OR y une los inicios y los
+        # finales
         for i in range(len(self.expresiones)-1):
             self.tokens.append(Token('OR', '|'))
         return self.tokens
@@ -174,7 +176,7 @@ class AFN:
         # np.set_printoptions(threshold=sys.maxsize)
         # print(np_afn)
 
-    def cargar_estado(self, estado, transiciones, tipo=None):
+    def cargar_estado(self, estado, transiciones, ini=False, fin=False):
         self.estados.append(estado)
         self.d_estados.append([])
         pos = self.pos_estado(estado)
@@ -185,9 +187,9 @@ class AFN:
         else:
             for i, caracter in enumerate(self.alfabeto):
                 self.d_estados[pos][i].append(transiciones[i])
-        if tipo == 'INI':
+        if ini:
             self.estado_ini.append(estado)
-        elif tipo == 'FIN':
+        if fin:
             self.estados_fin.append(estado)
 
     def agregar_transicion(self, estado_a_agregar, estado, caracter=None):
@@ -245,8 +247,8 @@ class GestorEstados:
         transiciones_e0[self.afn.pos_car(t.valor)].append(e1)
         transiciones_e1 = [[] for c in self.afn.alfabeto]
         transiciones_e1.append([])
-        self.afn.cargar_estado(e0, transiciones_e0, 'INI')
-        self.afn.cargar_estado(e1, transiciones_e1, 'FIN')
+        self.afn.cargar_estado(e0, transiciones_e0, ini=True)
+        self.afn.cargar_estado(e1, transiciones_e1, fin=True)
         ini = e0
         fin = e1
         elemento = (ini, fin)
@@ -272,12 +274,12 @@ class GestorEstados:
         transiciones_e0.append([])
         transiciones_e0[-1].append(transicion1[0])
         transiciones_e0[-1].append(transicion2[0])
-        self.afn.cargar_estado(e0, transiciones_e0, 'INI')
+        self.afn.cargar_estado(e0, transiciones_e0, ini=True)
 
         e1 = self.crear_estado()
         transiciones_e1 = [[] for c in self.afn.alfabeto]
         transiciones_e1.append([])
-        self.afn.cargar_estado(e1, transiciones_e1, 'FIN')
+        self.afn.cargar_estado(e1, transiciones_e1, fin=True)
 
         self.afn.agregar_transicion(e1, transicion1[1])
         self.afn.agregar_transicion(e1, transicion2[1])
@@ -297,11 +299,11 @@ class GestorEstados:
         transiciones_e0[-1].append(transicion[0])
         if t.nombre == 'AST':
             transiciones_e0[-1].append(e1)
-        self.afn.cargar_estado(e0, transiciones_e0, 'INI')
+        self.afn.cargar_estado(e0, transiciones_e0, ini=True)
 
         transiciones_e1 = [[] for c in self.afn.alfabeto]
         transiciones_e1.append([])
-        self.afn.cargar_estado(e1, transiciones_e1, 'FIN')
+        self.afn.cargar_estado(e1, transiciones_e1, fin=True)
 
         self.afn.agregar_transicion(e1, transicion[1])
         self.afn.agregar_transicion(transicion[0], transicion[1])
@@ -329,15 +331,15 @@ class AFD:
     def __repr__(self):
         return str(self)
 
-    def cargar_estado(self, estado, tipo=None):
+    def cargar_estado(self, estado, ini=False, fin=False):
         self.estados.append(estado)
         self.d_trans.append([])
         pos = self.pos_estado(estado)
         transiciones = [[] for c in self.alfabeto]
         self.d_trans[pos] = transiciones
-        if tipo == 'INI':
+        if ini:
             self.estado_ini.append(estado)
-        elif tipo == 'FIN':
+        if fin:
             self.estados_fin.append(estado)
 
     def agregar_transicion(self, estado_orig, caracter, estado_dest):
@@ -348,52 +350,125 @@ class AFD:
             raise UserWarning('No existe caracter en alfabeto')
 
     def minimizar(self):
-        f = set(self.estados_fin)
-        s_f = set(self.estados).difference(f)
-        pi = set(f)
-        pi.add(s_f)
-        pi_new = pi.copy()
-
+        f = self.estados_fin.copy()
+        s_f = [estado for estado in self.estados if estado not in f]
+        pi_new = [f]
+        pi_new += [s_f]
+        pi = []
+        tabla_destino = None
         while pi != pi_new:
             pi = pi_new.copy()
-            tabla_destino = [[[]] * len(self.estados)] * len(self.alfabeto)
-            for grupo in pi_new:
-                if len(grupo) > 1:
-                    for caracter in self.alfabeto:
-                        tabla_destino.append([])
-                        for estado in grupo:
-                            pos_estado = self.pos_estado(estado)
-                            pos_car = self.pos_car(caracter)
-                            estado_destino = self.d_trans[pos_estado][pos_car]
-                            grupo_destino = [grupo for grupo in pi if estado_destino in grupo][0]
-                            tabla_destino[self.pos_car(caracter)][self.pos_estado(estado)] = grupo_destino
-            nuevos_grupos = set()
+            tabla_destino = []
+            for c in self.alfabeto:
+                posiciones = []
+                for e in self.estados:
+                    posiciones.append([])
+                tabla_destino.append(posiciones)
             for grupo in pi_new:
                 for caracter in self.alfabeto:
-                    destinos = []
                     for estado in grupo:
-                        pos_car = self.pos_car(caracter)
                         pos_estado = self.pos_estado(estado)
-                        grupo_destino = tabla_destino[pos_car][pos_estado]
-                        if grupo_destino not in destinos:
-                            destinos.append(grupo_destino)
-                            if len(destinos) > 1:
-                                nuevos_grupos.add(set(estado))
-                                grupo_destino.remove(estado)
-            pi_new = pi_new.union(nuevos_grupos)
+                        pos_car = self.pos_car(caracter)
+                        estado_destino = self.d_trans[pos_estado][pos_car][0]
+                        grupo_destino = [grupo for grupo in pi if estado_destino in grupo][0]
+                        tabla_destino[pos_car][pos_estado] = grupo_destino
+            nuevos_grupos = []
+            i_grupo = 0
+            nuevo_grupo = False
+            while i_grupo < len(pi_new) and not nuevo_grupo:
+                grupo = pi_new[i_grupo]
+                if len(grupo) > 1:
+                    i_car = 0
+                    while i_car < len(self.alfabeto) and not nuevo_grupo:
+                        caracter = self.alfabeto[i_car]
+                        destinos = []
+                        estados_procesados = []
+                        grupo_loop = grupo.copy()
+                        for estado in grupo_loop:
+                            pos_car = self.pos_car(caracter)
+                            pos_estado = self.pos_estado(estado)
+                            grupo_destino = tabla_destino[pos_car][pos_estado]
+                            if grupo_destino not in destinos:
+                                destinos.append(grupo_destino)
+                                if len(destinos) > 1:
+                                    nuevos_grupos.append([estado])
+                                    grupo.remove(estado)
+                                    nuevo_grupo = True
+                            elif len(destinos) > 1:
+                                i = 0
+                                encontro_grupo = False
+                                cant_estados_procesados = len(estados_procesados)
+                                while encontro_grupo == False and i < cant_estados_procesados:
+                                    e = estados_procesados[i]
+                                    if tabla_destino[pos_car][self.pos_estado(e)] == tabla_destino[pos_car][pos_estado]:
+                                        # buscar en nuevos_grupos el grupo que le tiene al destino del estado actual
+                                        grupo_mismo_destino = [grupo for grupo in nuevos_grupos if e in grupo]
+                                        if not len(grupo_mismo_destino) == 0:
+                                            grupo_mismo_destino[0].append(estado)
+                                            grupo.remove(estado)
+                                        encontro_grupo = True
+                                    i += 1
+                            estados_procesados += [estado]
+                        i_car += 1
+                i_grupo += 1
+            pi_new += nuevos_grupos
 
+        # return pi_new, tabla_destino
         # Por cada grupo en pi_new hay que crear un estado para el DFA Minimizado y usar uno de los estados del
         # grupo para identificar a que grupo va con cada caracter
+        pi_new = sorted(pi_new, key=lambda x: x[0].valor)
+        afd_min = self.__class__(self.alfabeto)
+        estados_creados = []
+        i = 0
+        for grupo in pi_new:
+            grupo_procesado = [grupo_proc['estado'] for grupo_proc in estados_creados if grupo_proc['grupo'] == grupo]
+            if len(grupo_procesado) == 0:
+                estado = Estado(i)
+                i += 1
+                estados_creados += [{'estado': estado, 'grupo': grupo}]
+            else:
+                estado = grupo_procesado[0]
+            estado_orig = grupo[0]
+            ini = False
+            fin = False
+            for e in grupo:
+                if e in self.estado_ini:
+                    ini = True
+                if e in self.estados_fin:
+                    fin = True
+            afd_min.cargar_estado(estado, ini, fin)
+            for car in self.alfabeto:
+                # Obtener el grupo destino, verificar si ya tiene un estado en el nuevo AFD y si tiene apuntar a el o
+                # en caso contrario crearle un estado
+                grupo_dest = tabla_destino[self.pos_car(car)][self.pos_estado(estado_orig)]
+                estado_dest = [grupo['estado'] for grupo in estados_creados if grupo['grupo'] == grupo_dest]
+                if len(estado_dest) == 1:
+                    afd_min.agregar_transicion(estado, car, estado_dest[0])
+                else:
+                    estado_dest_nuevo = Estado(i)
+                    i += 1
+                    estados_creados += [{'estado': estado_dest_nuevo, 'grupo': grupo_dest}]
+                    afd_min.agregar_transicion(estado, car, estado_dest_nuevo)
+        return afd_min, pi_new
 
-
-
-
-
+    def evaluar_cadena(self, cadena):
+        # cadena_separada = re.split(' ',cadena)
+        estado_act = self.estado_ini
+        for c in cadena:
+            pos_car = self.pos_car(c)
+            if pos_car == -1:
+                raise UserWarning('El caracter no se encuentra en el alfabeto.')
+            pos_est = self.pos_estado(estado_act)
+            estado_des = self.d_trans[pos_est][pos_car]
+            estado_act = estado_des
+        if estado_act in self.estados_fin:
+            return 'El estado '
 
 
 
 
     def imprimir_tabla_transiciones(self):
+        print()
         print(end='\t')
         for caracter in self.alfabeto:
             print(caracter, end='\t\t')
@@ -438,12 +513,7 @@ class AFNaAFD:
             'estados_afn': estados_afn,
             'marcado': False
         }
-        tipo = None
-        if es_ini:
-            tipo = 'INI'
-        elif es_fin:
-            tipo = 'FIN'
-        self.afd.cargar_estado(estado_nuevo_afd, tipo)
+        self.afd.cargar_estado(estado_nuevo_afd, ini=es_ini, fin=es_fin)
         self.nro += 1
         self.d_estados.append(estado_nuevo)
         return estado_nuevo
