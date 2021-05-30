@@ -15,9 +15,10 @@ class TablaSimbolos:
 
 
 class Token:
-    def __init__(self, nombre, valor):
+    def __init__(self, nombre, valor, lado_izq):
         self.nombre = nombre
         self.valor = valor
+        self.lado_izq = lado_izq
 
     def __str__(self):
         return self.nombre + ":" + self.valor
@@ -27,7 +28,8 @@ class Token:
 
 
 class ExpresionRegular:
-    def __init__(self, patron):
+    def __init__(self, lado_izq, patron):
+        self.lado_izq = lado_izq
         self.patron = patron
         self.actual = 0
         self.longitud = len(self.patron)
@@ -43,12 +45,12 @@ class ExpresionRegular:
             c = self.patron[self.actual]
             self.actual += 1
             if c not in lector.simbolos.keys():
-                token_ret = Token('PALABRA', c)
+                token_ret = Token('PALABRA', c, self.lado_izq)
             else:
-                token_ret = Token(lector.simbolos[c], c)
+                token_ret = Token(lector.simbolos[c], c, self.lado_izq)
             return token_ret
         else:
-            return Token('NULL', '')
+            return Token('NULL', '', self.lado_izq)
 
 
 class LectorExpresionRegular:
@@ -66,8 +68,8 @@ class LectorExpresionRegular:
     def __repr__(self):
         return str(self)
 
-    def set_regex(self, patron):
-        expresion = ExpresionRegular(patron)
+    def set_regex(self, lado_izq, patron):
+        expresion = ExpresionRegular(lado_izq, patron)
         self.expresiones.append(expresion)
         if not self.sig_token:
             self.sig_token = self.get_token()
@@ -92,7 +94,7 @@ class LectorExpresionRegular:
         # En vez de esto hay que unir solo el inicio, ya que esto hace que sean varios OR y une los inicios y los
         # finales
         for i in range(len(self.expresiones)-1):
-            self.tokens.append(Token('OR', '|'))
+            self.tokens.append(Token('START', ' ', ' '))
         return self.tokens
 
     def exp(self):
@@ -133,8 +135,9 @@ class LectorExpresionRegular:
 
 
 class Estado:
-    def __init__(self, valor):
+    def __init__(self, valor, lado_izq):
         self.valor = valor
+        self.lado_izq = lado_izq
 
     def __str__(self):
         return str(self.valor)
@@ -230,18 +233,19 @@ class AFN:
 class GestorEstados:
     def __init__(self, lector):
         self.gestores = {'PALABRA': self.manejar_palabra, 'CONCAT': self.manejar_concat, 'OR': self.manejar_or,
-                         'AST': self.manejar_rep, 'MAS': self.manejar_rep, 'INTERR': self.manejar_interr}
+                         'AST': self.manejar_rep, 'MAS': self.manejar_rep, 'INTERR': self.manejar_interr,
+                         'START': self.manejar_start}
         self.lector = lector
         self.cant_estados = 0
         self.afn = AFN(lector.alfabeto)
 
-    def crear_estado(self):
+    def crear_estado(self, lado_izq):
         self.cant_estados += 1
-        return Estado(self.cant_estados)
+        return Estado(self.cant_estados, lado_izq)
 
     def manejar_palabra(self, t, afn_stack):
-        e0 = self.crear_estado()
-        e1 = self.crear_estado()
+        e0 = self.crear_estado(t.lado_izq)
+        e1 = self.crear_estado(t.lado_izq)
         transiciones_e0 = [[] for c in self.afn.alfabeto]
         transiciones_e0.append([])
         transiciones_e0[self.afn.pos_car(t.valor)].append(e1)
@@ -269,14 +273,14 @@ class GestorEstados:
         self.afn.eliminar_fin(transicion1[1])
         self.afn.eliminar_fin(transicion2[1])
 
-        e0 = self.crear_estado()
+        e0 = self.crear_estado(t.lado_izq)
         transiciones_e0 = [[] for c in self.afn.alfabeto]
         transiciones_e0.append([])
         transiciones_e0[-1].append(transicion1[0])
         transiciones_e0[-1].append(transicion2[0])
         self.afn.cargar_estado(e0, transiciones_e0, ini=True)
 
-        e1 = self.crear_estado()
+        e1 = self.crear_estado(t.lado_izq)
         transiciones_e1 = [[] for c in self.afn.alfabeto]
         transiciones_e1.append([])
         self.afn.cargar_estado(e1, transiciones_e1, fin=True)
@@ -292,8 +296,8 @@ class GestorEstados:
         self.afn.eliminar_ini(transicion[0])
         self.afn.eliminar_fin(transicion[1])
 
-        e0 = self.crear_estado()
-        e1 = self.crear_estado()
+        e0 = self.crear_estado(t.lado_izq)
+        e1 = self.crear_estado(t.lado_izq)
         transiciones_e0 = [[] for c in self.afn.alfabeto]
         transiciones_e0.append([])
         transiciones_e0[-1].append(transicion[0])
@@ -316,6 +320,22 @@ class GestorEstados:
         self.afn.agregar_transicion(transicion[1], transicion[0])
         afn_stack.append(transicion)
 
+    def manejar_start(self, t, afn_stack):
+        transicion2 = afn_stack.pop()
+        transicion1 = afn_stack.pop()
+        self.afn.eliminar_ini(transicion1[0])
+        self.afn.eliminar_ini(transicion2[0])
+
+        e0 = self.crear_estado(t.lado_izq)
+        transiciones_e0 = [[] for c in self.afn.alfabeto]
+        transiciones_e0.append([])
+        transiciones_e0[-1].append(transicion1[0])
+        transiciones_e0[-1].append(transicion2[0])
+        self.afn.cargar_estado(e0, transiciones_e0, ini=True)
+
+        elemento = (e0, transicion1[1])
+        afn_stack.append(elemento)
+
 
 class AFD:
     def __init__(self, alfabeto):
@@ -324,6 +344,7 @@ class AFD:
         self.estado_ini = []
         self.estados_fin = []
         self.alfabeto = alfabeto
+        self.tabla = []
 
     def __str__(self):
         return 'AFD: ' + self.alfabeto
@@ -350,9 +371,14 @@ class AFD:
             raise UserWarning('No existe caracter en alfabeto')
 
     def minimizar(self):
+        from collections import defaultdict
+        groups = defaultdict(list)
         f = self.estados_fin.copy()
-        s_f = [estado for estado in self.estados if estado not in f]
-        pi_new = [f]
+        for estado in f:
+            groups[estado.lado_izq].append(estado)
+        f = list(groups.values())
+        s_f = [estado for estado in self.estados if estado not in [estado for tokens in f for estado in tokens]]
+        pi_new = f
         pi_new += [s_f]
         pi = []
         tabla_destino = None
@@ -423,7 +449,15 @@ class AFD:
         for grupo in pi_new:
             grupo_procesado = [grupo_proc['estado'] for grupo_proc in estados_creados if grupo_proc['grupo'] == grupo]
             if len(grupo_procesado) == 0:
-                estado = Estado(i)
+                estados_finales = [e for e in grupo if e in self.estados_fin]
+                if len(estados_finales) > 0:
+                    print(len(estados_finales))
+                    for e in estados_finales:
+                        print('Estado ' + str(e.valor) + ' ' + e.lado_izq)
+                    print()
+                    estado = Estado(i, estados_finales[0].lado_izq)
+                else:
+                    estado = Estado(i, ' ')
                 i += 1
                 estados_creados += [{'estado': estado, 'grupo': grupo}]
             else:
@@ -445,7 +479,15 @@ class AFD:
                 if len(estado_dest) == 1:
                     afd_min.agregar_transicion(estado, car, estado_dest[0])
                 else:
-                    estado_dest_nuevo = Estado(i)
+                    estados_finales = [e for e in grupo_dest if e in self.estados_fin]
+                    if len(estados_finales) > 0:
+                        # print(len(estados_finales))
+                        # for e in estados_finales:
+                        #     print('Estado '+str(e.valor)+' '+e.lado_izq)
+                        # print()
+                        estado_dest_nuevo = Estado(i, estados_finales[0].lado_izq)
+                    else:
+                        estado_dest_nuevo = Estado(i, ' ')
                     i += 1
                     estados_creados += [{'estado': estado_dest_nuevo, 'grupo': grupo_dest}]
                     afd_min.agregar_transicion(estado, car, estado_dest_nuevo)
@@ -453,16 +495,19 @@ class AFD:
 
     def evaluar_cadena(self, cadena):
         # cadena_separada = re.split(' ',cadena)
-        estado_act = self.estado_ini
+        estado_act = self.estado_ini[0]
         for c in cadena:
             pos_car = self.pos_car(c)
             if pos_car == -1:
                 raise UserWarning('El caracter no se encuentra en el alfabeto.')
             pos_est = self.pos_estado(estado_act)
-            estado_des = self.d_trans[pos_est][pos_car]
+            estado_des = self.d_trans[pos_est][pos_car][0]
             estado_act = estado_des
         if estado_act in self.estados_fin:
-            return 'El estado '
+            self.tabla.append((estado_act.valor, cadena))  # DEBERIA SER (TOKEN, LEXEMA) Y AGREGAR A LA TABLA DE SIMBOLOS
+            return 'El estado ' + str(estado_act.valor) + ' es final y la cadena se acepta'
+        else:
+            return 'El estado ' + str(estado_act.valor) + ' no es final, cadena es rechazada'
 
 
 
@@ -502,11 +547,15 @@ class AFNaAFD:
         self.d_estados = []
 
     def crear_estado(self, estados_afn):
-        estado_nuevo_afd = Estado(self.nro)
         # Siempre deberia ser solo uno el que tiene el estado inicial
         es_ini = True and True in [True and e in self.afn.estado_ini or False for e in estados_afn] or False
         # Varios pueden tener un estado final
         es_fin = True and True in [True and e in self.afn.estados_fin or False for e in estados_afn] or False
+        if es_fin:
+            estado_final = [e for e in estados_afn if e in self.afn.estados_fin][0]
+            estado_nuevo_afd = Estado(self.nro, estado_final.lado_izq)
+        else:
+            estado_nuevo_afd = Estado(self.nro, ' ')
         estado_nuevo = {
             'valor': self.nro,
             'estado_afd': estado_nuevo_afd,
