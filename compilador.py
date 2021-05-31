@@ -11,7 +11,7 @@ def compilador(lector):
             print(t)
 
     lector.set_regex('x', 'a+.(b|a).b?')
-    lector.set_regex('y', 'b.(b*.a.b|a?.b.a*).a?')
+    lector.set_regex('y', 'b.(b*.a.b|a?.b.a+).a?')
     tokens = lector.parsear()
     gestor = GestorEstados(lector)
 

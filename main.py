@@ -53,6 +53,15 @@ class ExpresionRegular:
             return Token('NULL', '', self.lado_izq)
 
 
+def reemplazar_tokens(patron, token2, patron2):
+    patron_final = patron
+    while token2 in patron_final:
+        patron_final = patron_final[0:patron_final.find(token2)] + '(' + patron2 + ')' + patron_final[
+                                                                             patron_final.find(token2) + len(
+                                                                                 token2):]
+    return patron_final
+
+
 class LectorExpresionRegular:
     def __init__(self, alfabeto):
         self.expresiones = []
@@ -74,6 +83,35 @@ class LectorExpresionRegular:
         if not self.sig_token:
             self.sig_token = self.get_token()
 
+    def eliminar_tokens_lado_derecho(self):
+        lados_izq = []
+        lados_izq.append([e.lado_izq for e in self.expresiones])
+        lados_izq.append([e for e in self.expresiones])
+
+        for e in lados_izq[1]:
+            patron = e.patron
+            hay_tokens = True
+            while hay_tokens:
+                token = ''
+                tokens = []
+                for c in patron:
+                    if not c in self.simbolos:
+                        token += c
+                    elif token != '' and token in lados_izq[0]:
+                        tokens.append(token)
+                        token = ''
+                    else:
+                        token = ''
+                if len(tokens) > 0:
+                    tokens.sort(key = len, reverse=True)
+                    token = tokens[0]
+                    idx = lados_izq[0].index(token)
+                    lado_der_token = lados_izq[1][idx].patron
+                    patron = reemplazar_tokens(patron, token, lado_der_token)
+                else:
+                    hay_tokens = False
+                    e.patron = patron
+
     def get_token(self):
         # No hace falta validar el token como en el get_token de ExpresionRegular ya que el for en parsear
         # ejecuta solo con las expresiones que hay en self
@@ -89,6 +127,7 @@ class LectorExpresionRegular:
             raise ValueError("Caracter desconocido en la Expresion Regular.")
 
     def parsear(self):
+        self.eliminar_tokens_lado_derecho()
         for exp in self.expresiones:
             self.exp()
         # En vez de esto hay que unir solo el inicio, ya que esto hace que sean varios OR y une los inicios y los
@@ -494,7 +533,8 @@ class AFD:
         return afd_min, pi_new
 
     def evaluar_cadena(self, cadena):
-        # cadena_separada = re.split(' ',cadena)
+        self.tabla = []
+        # cadena_separada = re.split(' ', cadena)
         estado_act = self.estado_ini[0]
         for c in cadena:
             pos_car = self.pos_car(c)
@@ -504,16 +544,16 @@ class AFD:
             estado_des = self.d_trans[pos_est][pos_car][0]
             estado_act = estado_des
         if estado_act in self.estados_fin:
-            self.tabla.append((estado_act.valor, cadena))  # DEBERIA SER (TOKEN, LEXEMA) Y AGREGAR A LA TABLA DE SIMBOLOS
-            return 'El estado ' + str(estado_act.valor) + ' es final y la cadena se acepta'
+            self.tabla.append((estado_act.lado_izq, cadena))  # DEBERIA SER (TOKEN, LEXEMA) Y AGREGAR A LA TABLA DE SIMBOLOS
+            print('El estado ' + str(estado_act.valor) + ' es final, pertenece al token "'+estado_act.lado_izq+'" y la cadena se acepta')
         else:
-            return 'El estado ' + str(estado_act.valor) + ' no es final, cadena es rechazada'
+            print('ERROR: la cadena '+cadena+' fue rechazada.')
 
-
-
+    def imprimir_tabla_simbolos(self):
+        for i in self.tabla:
+            print('Token: '+i[0]+', lexema: '+i[1])
 
     def imprimir_tabla_transiciones(self):
-        print()
         print(end='\t')
         for caracter in self.alfabeto:
             print(caracter, end='\t\t')
@@ -527,6 +567,8 @@ class AFD:
                 else:
                     print(self.d_trans[self.pos_estado(estado)][caracter], end='\t\t')
             print()
+        print('Estado inicial:'+str(self.estado_ini))
+        print('Estados finales:'+str(self.estados_fin))
 
     def pos_car(self, caracter):
         if self.alfabeto.count(caracter) > 0:
