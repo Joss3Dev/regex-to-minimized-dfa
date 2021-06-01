@@ -66,7 +66,7 @@ class LectorExpresionRegular:
     def __init__(self, alfabeto):
         self.expresiones = []
         self.alfabeto = alfabeto
-        self.simbolos = {'(': 'PAR_IZQ', ')': 'PAR_DER', '.': 'CONCAT', '*': 'AST', '|': 'OR', '+': 'MAS', '?': 'INTERR'}
+        self.simbolos = {'(': 'PAR_IZQ', ')': 'PAR_DER', '.': 'CONCAT', '*': 'AST', '|': 'OR', '?': 'INTERR'}
         self.actual = 0
         self.tokens = []
         self.sig_token = None
@@ -111,6 +111,7 @@ class LectorExpresionRegular:
                 else:
                     hay_tokens = False
                     e.patron = patron
+                    e.longitud = len(patron)
 
     def get_token(self):
         # No hace falta validar el token como en el get_token de ExpresionRegular ya que el for en parsear
@@ -154,7 +155,7 @@ class LectorExpresionRegular:
 
     def factor(self):
         self.palabra()
-        if self.sig_token.nombre in ['AST', 'MAS', 'INTERR']:
+        if self.sig_token.nombre in ['AST', 'INTERR']:
             self.tokens.append(self.sig_token)
             self.consumir(self.sig_token.nombre)
 
@@ -272,7 +273,7 @@ class AFN:
 class GestorEstados:
     def __init__(self, lector):
         self.gestores = {'PALABRA': self.manejar_palabra, 'CONCAT': self.manejar_concat, 'OR': self.manejar_or,
-                         'AST': self.manejar_rep, 'MAS': self.manejar_rep, 'INTERR': self.manejar_interr,
+                         'AST': self.manejar_rep, 'INTERR': self.manejar_interr,
                          'START': self.manejar_start}
         self.lector = lector
         self.cant_estados = 0
@@ -490,10 +491,6 @@ class AFD:
             if len(grupo_procesado) == 0:
                 estados_finales = [e for e in grupo if e in self.estados_fin]
                 if len(estados_finales) > 0:
-                    print(len(estados_finales))
-                    for e in estados_finales:
-                        print('Estado ' + str(e.valor) + ' ' + e.lado_izq)
-                    print()
                     estado = Estado(i, estados_finales[0].lado_izq)
                 else:
                     estado = Estado(i, ' ')
@@ -530,6 +527,22 @@ class AFD:
                     i += 1
                     estados_creados += [{'estado': estado_dest_nuevo, 'grupo': grupo_dest}]
                     afd_min.agregar_transicion(estado, car, estado_dest_nuevo)
+        cambio = True
+        estados = afd_min.estado_ini
+        while cambio:
+            cambio = False
+            for e in estados:
+                for c in afd_min.alfabeto:
+                    for e_dest in afd_min.d_trans[afd_min.pos_estado(e)][afd_min.pos_car(c)]:
+                        if e_dest not in estados:
+                            estados.append(e_dest)
+                            cambio = True
+        if len(estados) < len(afd_min.estados):
+            print('hay estados inalcanzables')
+            inalcanzables = [e for e in afd_min.estados if e not in estados]
+            for e in inalcanzables:
+                afd_min.d_trans.pop(afd_min.pos_estado(e))
+                afd_min.estados.pop(afd_min.pos_estado(e))
         return afd_min, pi_new
 
     def evaluar_cadena(self, cadena):
@@ -570,6 +583,25 @@ class AFD:
         print('Estado inicial:'+str(self.estado_ini))
         print('Estados finales:'+str(self.estados_fin))
 
+    def archivo(self):
+        file = open("automata", "w+")
+        estados = [e.valor for e in self.estados]
+        for e in estados:
+            file.write(str(e)+' ')
+        file.write('\n')
+        for c in self.alfabeto:
+            file.write(c+' ')
+        file.write('\n')
+        file.write(str(self.estado_ini[0].valor)+'\n')
+        for e in self.estados_fin:
+            file.write(str(e.valor)+' ')
+        file.write('\n')
+        for c in self.alfabeto:
+            for e in self.estados:
+                pos_car = self.pos_car(c)
+                pos_estado = self.pos_estado(e)
+                file.write(str(e.valor)+' '+c+' '+str(self.d_trans[pos_estado][pos_car][0].valor)+'\n')
+
     def pos_car(self, caracter):
         if self.alfabeto.count(caracter) > 0:
             return self.alfabeto.index(caracter)
@@ -594,7 +626,9 @@ class AFNaAFD:
         # Varios pueden tener un estado final
         es_fin = True and True in [True and e in self.afn.estados_fin or False for e in estados_afn] or False
         if es_fin:
-            estado_final = [e for e in estados_afn if e in self.afn.estados_fin][0]
+            estado_final = [e for e in estados_afn if e in self.afn.estados_fin]
+            estado_final.sort(key=lambda x: x.valor)
+            estado_final = estado_final[0]
             estado_nuevo_afd = Estado(self.nro, estado_final.lado_izq)
         else:
             estado_nuevo_afd = Estado(self.nro, ' ')
