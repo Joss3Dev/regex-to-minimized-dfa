@@ -109,11 +109,3 @@ def print_tokens(tokens):
 
 if __name__ == "__main__":
         main()
-
-
-
-# 0123456789
-# digito
-# 0|1|2|3|4|5|6|7|8|9
-# digitos
-# digito+

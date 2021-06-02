@@ -66,7 +66,7 @@ class LectorExpresionRegular:
     def __init__(self, alfabeto):
         self.expresiones = []
         self.alfabeto = alfabeto
-        self.simbolos = {'(': 'PAR_IZQ', ')': 'PAR_DER', '.': 'CONCAT', '*': 'AST', '|': 'OR', '?': 'INTERR'}
+        self.simbolos = {'(': 'PAR_IZQ', ')': 'PAR_DER', '.': 'CONCAT', '*': 'AST', '+': 'MAS', '|': 'OR', '?': 'INTERR'}
         self.actual = 0
         self.tokens = []
         self.sig_token = None
@@ -155,7 +155,7 @@ class LectorExpresionRegular:
 
     def factor(self):
         self.palabra()
-        if self.sig_token.nombre in ['AST', 'INTERR']:
+        if self.sig_token.nombre in ['AST', 'MAS', 'INTERR']:
             self.tokens.append(self.sig_token)
             self.consumir(self.sig_token.nombre)
 
@@ -273,7 +273,7 @@ class AFN:
 class GestorEstados:
     def __init__(self, lector):
         self.gestores = {'PALABRA': self.manejar_palabra, 'CONCAT': self.manejar_concat, 'OR': self.manejar_or,
-                         'AST': self.manejar_rep, 'INTERR': self.manejar_interr,
+                         'AST': self.manejar_rep, 'MAS': self.manejar_rep, 'INTERR': self.manejar_interr,
                          'START': self.manejar_start}
         self.lector = lector
         self.cant_estados = 0
@@ -528,7 +528,7 @@ class AFD:
                     estados_creados += [{'estado': estado_dest_nuevo, 'grupo': grupo_dest}]
                     afd_min.agregar_transicion(estado, car, estado_dest_nuevo)
         cambio = True
-        estados = afd_min.estado_ini
+        estados = afd_min.estado_ini.copy()
         while cambio:
             cambio = False
             for e in estados:
@@ -547,20 +547,22 @@ class AFD:
 
     def evaluar_cadena(self, cadena):
         self.tabla = []
-        # cadena_separada = re.split(' ', cadena)
-        estado_act = self.estado_ini[0]
-        for c in cadena:
-            pos_car = self.pos_car(c)
-            if pos_car == -1:
-                raise UserWarning('El caracter no se encuentra en el alfabeto.')
-            pos_est = self.pos_estado(estado_act)
-            estado_des = self.d_trans[pos_est][pos_car][0]
-            estado_act = estado_des
-        if estado_act in self.estados_fin:
-            self.tabla.append((estado_act.lado_izq, cadena))  # DEBERIA SER (TOKEN, LEXEMA) Y AGREGAR A LA TABLA DE SIMBOLOS
-            print('El estado ' + str(estado_act.valor) + ' es final, pertenece al token "'+estado_act.lado_izq+'" y la cadena se acepta')
-        else:
-            print('ERROR: la cadena '+cadena+' fue rechazada.')
+        cadena_separada = re.split(' ', cadena)
+        for cadena in cadena_separada:
+            estado_act = self.estado_ini[0]
+            for c in cadena:
+                pos_car = self.pos_car(c)
+                if pos_car == -1:
+                    print('El caracter no se encuentra en el alfabeto.')
+                    return
+                pos_est = self.pos_estado(estado_act)
+                estado_des = self.d_trans[pos_est][pos_car][0]
+                estado_act = estado_des
+            if estado_act in self.estados_fin:
+                self.tabla.append((estado_act.lado_izq, cadena))  # DEBERIA SER (TOKEN, LEXEMA) Y AGREGAR A LA TABLA DE SIMBOLOS
+                print('El estado ' + str(estado_act.valor) + ' es final, pertenece al token "'+estado_act.lado_izq+'" y la cadena se acepta')
+            else:
+                print('ERROR: la cadena '+cadena+' fue rechazada.')
 
     def imprimir_tabla_simbolos(self):
         for i in self.tabla:
